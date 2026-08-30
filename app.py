@@ -107,10 +107,10 @@ def timestamp_inputs(key_prefix):
 
 
 st.title("IMO Tracker")
-st.caption("V1.1 — quick event logging with Google Sheets persistence")
+st.caption("V1.2 — final logging build")
 
 tab_today, tab_bm, tab_symptoms, tab_supps, tab_food, tab_morning, tab_data = st.tabs(
-    ["Today", "Bowel", "Symptoms", "Supplements", "Meals", "Morning", "Data"]
+    ["Today", "Bowel", "Symptoms", "Supplements", "Meals", "Measurements", "Data"]
 )
 
 with tab_today:
@@ -145,7 +145,7 @@ with tab_bm:
             straining = st.radio("Straining", ["None", "Mild", "Moderate", "Significant"], horizontal=True)
             completeness = st.radio("Completeness", ["Complete", "Mostly complete", "Incomplete"], horizontal=True)
             urgency = st.radio("Urgency", ["None", "Normal urge", "Strong urgency", "Emergency"], horizontal=True)
-            assistance = st.multiselect("Assistance", ASSISTANCE, default=["None"])
+            assistance = st.multiselect("Assistance", ASSISTANCE, default=["Positioning"])
             pain = st.slider("Pain", 0, 10, 0)
             gas = st.slider("Gas (0 = none, 10 = extreme)", 0, 10, 0)
             notes = st.text_area("Notes (optional)", placeholder="Colour, mucus, felt better afterwards…")
@@ -157,7 +157,7 @@ with tab_bm:
                 try:
                     save_event("bowel_movement", "successful", value_1=','.join(map(str, bristol)), value_2=ease, value_3=pain,
                                details=details, notes=notes, event_date=d, event_time=t)
-                    st.success("Bowel movement saved.")
+                    st.success("Saved to Google Sheets ✓")
                 except Exception as e:
                     st.error("Could not save.")
                     st.code(str(e))
@@ -166,46 +166,35 @@ with tab_bm:
             d, t = timestamp_inputs("bm_fail")
             urge = st.radio("Was there an urge?", ["Yes", "No", "Unsure"], horizontal=True)
             difficulty = st.slider("Difficulty / effort", 0, 10, 5)
-            assistance = st.multiselect("Assistance attempted", ASSISTANCE)
+            gas = st.slider("Gas (0 = none, 10 = extreme)", 0, 10, 0)
+            assistance = st.multiselect("Assistance attempted", ASSISTANCE, default=["Positioning"])
             notes = st.text_area("Notes (optional)")
             submit = st.form_submit_button("Save unsuccessful attempt", type="primary")
             if submit:
-                details = f"urge={urge}; difficulty={difficulty}/10; assistance={','.join(assistance) or 'none'}"
+                details = f"urge={urge}; difficulty={difficulty}/10; gas={gas}/10; assistance={','.join(assistance) or 'none'}"
                 try:
                     save_event("bowel_attempt", "unsuccessful", value_1=urge, value_2=difficulty,
                                details=details, notes=notes, event_date=d, event_time=t)
-                    st.success("Attempt saved.")
+                    st.success("Saved to Google Sheets ✓")
                 except Exception as e:
                     st.error("Could not save.")
                     st.code(str(e))
 
 with tab_symptoms:
-    st.subheader("Symptom check-in")
-    st.caption("Leave symptoms unchecked if you did not assess them. Zero means you checked and the symptom was absent.")
-    with st.form("symptoms_form", clear_on_submit=True):
+    st.subheader("Daily symptom check-in")
+    st.caption("Score every symptom 0–10. Zero means checked and absent.")
+    with st.form("symptoms_form", clear_on_submit=False):
         d, t = timestamp_inputs("sym")
         overall = st.slider("Overall right now (0 = terrible, 10 = excellent)", 0, 10, 5)
-        scores = {}
-        for symptom in SYMPTOMS:
-            enabled = st.checkbox(f"Log {symptom}", key=f"log_{symptom}")
-            if enabled:
-                scores[symptom] = st.slider(symptom, 0, 10, 0, key=f"score_{symptom}")
-        hist_tags = []
-        if "Histamine-type reaction" in scores:
-            hist_tags = st.multiselect("Histamine-type features", HISTAMINE_TAGS)
+        scores = {symptom: st.slider(symptom, 0, 10, 0, key=f"score_{symptom}") for symptom in SYMPTOMS}
         notes = st.text_area("Notes (optional)")
-        submit = st.form_submit_button("Save symptom check-in", type="primary")
-        if submit:
-            details_parts = [f"overall={overall}/10"] + [f"{k}={v}/10" for k, v in scores.items()]
-            if hist_tags:
-                details_parts.append("histamine_features=" + ",".join(hist_tags))
+        if st.form_submit_button("Save symptom check-in", type="primary"):
+            details = "; ".join([f"overall={overall}/10"] + [f"{k}={v}/10" for k,v in scores.items()])
             try:
-                save_event("symptom_checkin", "general", value_1=overall, details="; ".join(details_parts), notes=notes,
-                           event_date=d, event_time=t)
-                st.success("Symptom check-in saved.")
+                save_event("symptom_checkin","daily",value_1=overall,details=details,notes=notes,event_date=d,event_time=t)
+                st.success("Saved to Google Sheets ✓")
             except Exception as e:
-                st.error("Could not save.")
-                st.code(str(e))
+                st.error("Could not save."); st.code(str(e))
 
 with tab_supps:
     st.subheader("Supplement / medication")
@@ -243,7 +232,7 @@ with tab_supps:
                 save_event("supplement", name, value_1=f"{amount:g} {preset['dose_label']}", value_2=active_display,
                            details=f"dose={amount:g} {preset['dose_label']}; active={active_display}", notes=notes,
                            event_date=d, event_time=t)
-                st.success(f"{name} saved.")
+                st.success("Saved to Google Sheets ✓")
             except Exception as e:
                 st.error("Could not save.")
                 st.code(str(e))
@@ -263,39 +252,41 @@ with tab_food:
             try:
                 save_event("food_exposure", kind, value_1=what, value_2="DAO" if dao else "", details=details, notes=notes,
                            event_date=d, event_time=t)
-                st.success("Meal / exposure saved.")
+                st.success("Saved to Google Sheets ✓")
             except Exception as e:
                 st.error("Could not save.")
                 st.code(str(e))
 
 with tab_morning:
-    st.subheader("Morning metrics")
-    with st.form("morning_form", clear_on_submit=True):
-        d = st.date_input("Date", value=now_local().date(), key="morning_date")
-        sleep_hours = st.number_input("Sleep duration (hours)", min_value=0.0, max_value=24.0, step=0.25)
-        hrv = st.number_input("HRV (ms, optional)", min_value=0.0, step=1.0)
-        rhr = st.number_input("Resting heart rate (bpm, optional)", min_value=0.0, step=1.0)
-        quality = st.slider("Sleep quality (0–10, optional)", 0, 10, 5)
-        st.divider()
-        st.caption("Optional pre-first-meal ketosis metrics")
-        glucose = st.number_input("Glucose (mmol/L, optional)", min_value=0.0, step=0.1, format="%.1f")
-        ketones = st.number_input("Ketones (mmol/L, optional)", min_value=0.0, step=0.1, format="%.1f")
-        gki_text = "NA"
-        if glucose > 0 and ketones > 0:
-            gki_text = f"{glucose / ketones:.2f}"
-            st.info(f"Calculated GKI: **{gki_text}**")
-        notes = st.text_area("Notes (optional)")
-        submit = st.form_submit_button("Save morning metrics", type="primary")
-        if submit:
-            details = (f"sleep={sleep_hours}h; HRV={hrv or 'NA'}ms; RHR={rhr or 'NA'}bpm; quality={quality}/10; "
-                       f"glucose={glucose or 'NA'}mmol/L; ketones={ketones or 'NA'}mmol/L; GKI={gki_text}")
-            try:
-                save_event("morning_metrics", "morning", value_1=sleep_hours, value_2=hrv, value_3=gki_text,
-                           details=details, notes=notes, event_date=d, event_time=time(8, 0))
-                st.success("Morning metrics saved.")
-            except Exception as e:
-                st.error("Could not save.")
-                st.code(str(e))
+    st.subheader("Measurements")
+    mode = st.radio("What are you logging?", ["Sleep / HRV", "Bloods / ketosis"], horizontal=True)
+    if mode == "Sleep / HRV":
+        with st.form("sleep_hrv", clear_on_submit=True):
+            d, t = timestamp_inputs("sleep")
+            sleep = st.number_input("Sleep duration (hours, optional)",0.0,24.0,step=0.25)
+            hrv = st.number_input("HRV (ms, optional)",min_value=0.0,step=1.0)
+            rhr = st.number_input("Resting heart rate (bpm, optional)",min_value=0.0,step=1.0)
+            quality = st.slider("Sleep quality (0–10)",0,10,5)
+            notes=st.text_area("Notes (optional)")
+            if st.form_submit_button("Save sleep / HRV",type="primary"):
+                details=f"sleep={sleep or 'NA'}h; HRV={hrv or 'NA'}ms; RHR={rhr or 'NA'}bpm; quality={quality}/10"
+                try:
+                    save_event("sleep_hrv","measurement",sleep,hrv,rhr,details,notes,d,t); st.success("Saved to Google Sheets ✓")
+                except Exception as e: st.error("Could not save."); st.code(str(e))
+    else:
+        with st.form("bloods", clear_on_submit=True):
+            d,t=timestamp_inputs("blood")
+            glucose=st.number_input("Glucose (mmol/L)",min_value=0.0,step=0.1,format="%.1f")
+            ketones=st.number_input("Ketones (mmol/L)",min_value=0.0,step=0.1,format="%.1f")
+            gki=glucose/ketones if glucose>0 and ketones>0 else None
+            if gki is not None: st.info(f"Calculated GKI: **{gki:.2f}**")
+            notes=st.text_area("Notes (optional)")
+            if st.form_submit_button("Save bloods / ketosis",type="primary"):
+                gt=f"{gki:.2f}" if gki is not None else "NA"
+                details=f"glucose={glucose or 'NA'}mmol/L; ketones={ketones or 'NA'}mmol/L; GKI={gt}"
+                try:
+                    save_event("bloods_ketosis","measurement",glucose,ketones,gt,details,notes,d,t); st.success("Saved to Google Sheets ✓")
+                except Exception as e: st.error("Could not save."); st.code(str(e))
 
 with tab_data:
     st.subheader("Raw data")
